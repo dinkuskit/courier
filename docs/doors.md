@@ -30,8 +30,12 @@ administrator.
 A door's refusal starts its message with its code, as in
 `COURIER_ONLY: Only the store's courier may use this door.` EmDash's sandbox
 passes only the message of an error thrown inside a Registry plugin, under the
-code `ROUTE_ERROR`, so the courier reads the code from the start of the
-message. A door written without the helpers does the same.
+code `ROUTE_ERROR`, with the error's name in front:
+`PluginRouteError: COURIER_ONLY: Only the store's courier may use this door.`
+The courier finds the first `CODE: ` anywhere in that message, never only at
+its start. A door written without the helpers does the same. The status below is
+the one a door sets; a sandboxed door reached over HTTP answers 400 whatever it
+set, and the courier never calls over HTTP.
 
 | Code | Status | When |
 | --- | --- | --- |

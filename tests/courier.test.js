@@ -76,6 +76,14 @@ describe("what the courier refuses to carry", () => {
     expect(report.problems).toEqual([{ plugin: "shop", code: "UNKNOWN_TOPIC", route: "courier/outbox", topic: "order.shipped" }]);
   });
 
+  test("reads COURIER_ONLY from the exact message EmDash 1.5's sandbox returns", async () => {
+    const runtime = fakeRuntime({
+      "reviews courier/inbox": () => wantsShop,
+      "shop courier/outbox": () => ({ success: false, error: { code: "ROUTE_ERROR", message: "PluginRouteError: COURIER_ONLY: Only the store's courier may use this door." } }),
+    });
+    expect((await runCourier(runtime)).problems[0].code).toBe("COURIER_ONLY");
+  });
+
   test("a sandboxed error with no code in its message stays ROUTE_ERROR", async () => {
     const runtime = fakeRuntime({
       "reviews courier/inbox": () => wantsShop,
