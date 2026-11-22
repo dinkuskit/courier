@@ -17,7 +17,10 @@ waiting, or a minute late costs money, ask inline during the request instead.
 
 ## The two doors
 
-Both are private `POST` routes with the permission `plugins:manage`. Every
+Both are private routes that declare `methods: ["POST"]` and the permission
+`plugins:manage`. The courier finds a door by its declared methods: EmDash
+answers a route lookup for a Registry plugin even for a route the plugin never
+declared, so a route that declares no methods is not a door. Every
 request body and answer carries `courier: 1`.
 
 A door **refuses any call that carries a person** (error `COURIER_ONLY`). Over
@@ -42,6 +45,7 @@ set, and the courier never calls over HTTP.
 | `COURIER_ONLY` | 403 | The call carries a signed-in person. |
 | `BAD_COURIER_REQUEST` | 400 | The call is not a courier request, or names an unknown operation. |
 | `UNKNOWN_TOPIC` | 404 | The outbox does not send that topic. |
+| `BAD_BATCH` | 500 | The topic's reader answered no item list, or more items than asked. The door never cuts an answer short, because its bookmark would pass items nobody was given. |
 
 A door must never be public. The courier skips a public door and reports
 `PUBLIC_DOOR`.
@@ -127,7 +131,7 @@ stays where it was. A sender that is not installed is reported as
 | Limit | Value |
 | --- | --- |
 | Items in one handoff | 50, or up to 100 when the receiver asks |
-| Handoffs in one run, across every receiver | 20 |
+| Handoffs in one run, across every receiver (an answer with nothing new is not one) | 20 |
 | Bytes in one item | 8 KB |
 | Topics one receiver may want | 20 |
 | Characters in an id | 200 |
@@ -140,8 +144,12 @@ storage read. WordPress runs timed jobs at most once every 60 seconds.
 
 `@dinkuskit/courier/doors` has `outboxDoor`, `inboxDoor` and `courierStatus`.
 They hold the guard, the request checks and the bookmark bookkeeping, for
-sandboxed and trusted plugins. They import only `PluginRouteError` from
-`emdash` and add about 2.7 KB minified to a plugin that uses both doors. A
+sandboxed and trusted plugins. They import nothing: a refusal is an Error
+named `PluginRouteError` with a string `code` and a number `status`, which
+EmDash 1.4 and 1.5 both treat as their own `PluginRouteError`. They add about
+2.7 KB minified to a plugin that uses both doors (measured with Rolldown, as
+the Registry build bundles). Importing the class from `emdash` would bring
+about 12 KB of EmDash with it. A
 plugin may write its own doors to this contract instead.
 
 ## How the big platforms do it

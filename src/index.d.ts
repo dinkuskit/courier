@@ -54,6 +54,7 @@ export interface CourierRuntime {
 }
 
 export interface CourierOptions {
+  /** Lower limits for this run; each is capped at its locked value in `DEFAULT_LIMITS`. */
   limits?: Partial<CourierLimits>;
 }
 

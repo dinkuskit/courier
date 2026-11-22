@@ -11,8 +11,6 @@
  * the store's own code with no person. So "no person" means "the courier".
  */
 
-import { PluginRouteError } from "emdash";
-
 export const COURIER_VERSION = 1;
 export const OUTBOX_ROUTE = "courier/outbox";
 export const INBOX_ROUTE = "courier/inbox";
@@ -28,9 +26,16 @@ const LATE_AFTER_MS = 5 * 60_000;
 /**
  * A refusal whose message starts with its code. EmDash's sandbox passes only
  * the message across, as ROUTE_ERROR, so the courier reads the code from there.
+ *
+ * EmDash (1.4 and 1.5) knows a PluginRouteError by its shape: an Error named
+ * "PluginRouteError" with a string code and a number status. Building one by
+ * shape keeps `emdash` out of a Registry bundle, which would otherwise carry
+ * about 12 KB of EmDash's own code along with the class.
  */
 function refuse(code, words, status) {
-  return new PluginRouteError(code, `${code}: ${words}`, status);
+  const error = new Error(`${code}: ${words}`);
+  error.name = "PluginRouteError";
+  return Object.assign(error, { code, status });
 }
 
 function isRecord(value) {
@@ -75,9 +80,12 @@ export function outboxDoor(topics) {
     const asked = Number.isInteger(input.limit) ? input.limit : DEFAULT_ITEMS;
     const limit = Math.min(Math.max(asked, 1), MAX_ITEMS);
     const batch = (await read({ after, limit }, ctx)) ?? {};
-    const items = Array.isArray(batch.items) ? batch.items.slice(0, limit) : [];
+    // Never cut a reader's answer short: its bookmark would then pass items nobody was given.
+    if (!Array.isArray(batch.items) || batch.items.length > limit) {
+      throw refuse("BAD_BATCH", `The topic's reader must answer a list of at most ${limit} items.`, 500);
+    }
     const next = batch.next === undefined ? after : batch.next;
-    return { courier: COURIER_VERSION, items, next, more: batch.more === true };
+    return { courier: COURIER_VERSION, items: batch.items, next, more: batch.more === true };
   });
 }
 

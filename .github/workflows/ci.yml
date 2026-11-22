@@ -43,8 +43,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 1.4.0 is what stores run today; 1.5.0 is the lockfile's version.
-        emdash: ["1.4.0", "1.5.0"]
+        # 1.4.0 is what stores run today; 1.5.0 is the lockfile's version. Each EmDash
+        # has its own Registry sandbox runner for Node, pinned to that exact EmDash.
+        include:
+          - emdash: "1.4.0"
+            sandbox: "0.9.6"
+          - emdash: "1.5.0"
+            sandbox: "0.9.7"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -59,6 +64,10 @@ jobs:
         if: matrix.emdash != '1.5.0'
         env:
           EMDASH_VERSION: ${{ matrix.emdash }}
-        run: npm install --no-save --ignore-scripts --no-audit --no-fund "emdash@$EMDASH_VERSION"
+          SANDBOX_VERSION: ${{ matrix.sandbox }}
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund "emdash@$EMDASH_VERSION" "@emdash-cms/sandbox-workerd@$SANDBOX_VERSION"
+      # Scripts are off for every package, so put workerd's own binary in place from the
+      # platform package npm already installed. The Registry sandbox proof runs on it.
+      - run: node node_modules/workerd/install.js
       - run: npm run typecheck
       - run: npm test

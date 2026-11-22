@@ -19,7 +19,7 @@ function fakeRuntime(routes, { sandboxed = [] } = {}) {
       .filter((id) => !sandboxed.includes(id)).map((id) => ({ id })),
     sandboxedPlugins: new Map(sandboxed.map((id) => [`${id}:1.0.0`, {}])),
     getPluginRouteMeta(id, route) {
-      return routes[`${id} ${route}`] ? { public: false } : null;
+      return routes[`${id} ${route}`] ? { public: false, methods: ["POST"] } : { public: false };
     },
     async handlePluginApiRoute(id, method, route, request, user) {
       const body = await request.json();
@@ -68,20 +68,14 @@ describe("what the courier refuses to carry", () => {
   });
 
   test("reads the door's code from a sandboxed plugin's refusal, which EmDash passes on only as ROUTE_ERROR", async () => {
-    const runtime = fakeRuntime({
-      "reviews courier/inbox": () => wantsShop,
-      "shop courier/outbox": () => ({ success: false, error: { code: "ROUTE_ERROR", message: "PluginRouteError: UNKNOWN_TOPIC: This plugin does not send that topic." } }),
-    });
-    const report = await runCourier(runtime);
-    expect(report.problems).toEqual([{ plugin: "shop", code: "UNKNOWN_TOPIC", route: "courier/outbox", topic: "order.shipped" }]);
-  });
-
-  test("reads COURIER_ONLY from the exact message EmDash 1.5's sandbox returns", async () => {
-    const runtime = fakeRuntime({
-      "reviews courier/inbox": () => wantsShop,
-      "shop courier/outbox": () => ({ success: false, error: { code: "ROUTE_ERROR", message: "PluginRouteError: COURIER_ONLY: Only the store's courier may use this door." } }),
-    });
-    expect((await runCourier(runtime)).problems[0].code).toBe("COURIER_ONLY");
+    // The exact message EmDash 1.5's sandbox returns: the error's name, then the door's code.
+    for (const code of ["UNKNOWN_TOPIC", "COURIER_ONLY"]) {
+      const runtime = fakeRuntime({
+        "reviews courier/inbox": () => wantsShop,
+        "shop courier/outbox": () => ({ success: false, error: { code: "ROUTE_ERROR", message: `PluginRouteError: ${code}: The door said no.` } }),
+      });
+      expect((await runCourier(runtime)).problems).toEqual([{ plugin: "shop", code, route: "courier/outbox", topic: "order.shipped" }]);
+    }
   });
 
   test("a sandboxed error with no code in its message stays ROUTE_ERROR", async () => {
@@ -90,6 +84,34 @@ describe("what the courier refuses to carry", () => {
       "shop courier/outbox": () => ({ success: false, error: { code: "ROUTE_ERROR", message: "Error: something broke" } }),
     });
     expect((await runCourier(runtime)).problems[0].code).toBe("ROUTE_ERROR");
+  });
+
+  test("receivers with nothing new spend none of the run's handoffs, so a later receiver still gets its news", async () => {
+    const idle = Array.from({ length: 20 }, (_, n) => ({ from: "shop", topic: `quiet.${n}`, after: "0" }));
+    const runtime = fakeRuntime({
+      "a-first courier/inbox": (body) => (body.op === "wants" ? { success: true, data: { courier: 1, wants: idle } } : { success: true, data: { courier: 1, saved: 0, moved: true } }),
+      "b-later courier/inbox": (body) => (body.op === "wants" ? wantsShop : { success: true, data: { courier: 1, saved: body.items.length, moved: true } }),
+      "shop courier/outbox": (body) => ({ success: true, data: body.topic === "order.shipped"
+        ? { courier: 1, items: [item("x")], next: "1", more: false } : { courier: 1, items: [], next: body.after, more: false } }),
+    });
+    const report = await runCourier(runtime);
+    expect(report).toMatchObject({ receivers: 2, handoffs: 1, delivered: 1, unfinished: false });
+    expect(runtime.calls.filter((call) => call.body.op === "deliver").map((call) => call.id)).toEqual(["b-later"]);
+  });
+
+  test("a store may lower the limits, never raise them", async () => {
+    const big = { ...item("x"), data: { note: "a".repeat(9000) } };
+    const runtime = fakeRuntime({
+      "reviews courier/inbox": (body) => (body.op === "wants" ? wantsShop : { success: true, data: { courier: 1, saved: body.items.length, moved: true } }),
+      "shop courier/outbox": () => ({ success: true, data: { courier: 1, items: [big], next: "1", more: false } }),
+    });
+    expect((await runCourier(runtime, { limits: { itemBytes: 16384, handoffsPerRun: 21 } })).problems[0].code).toBe("BAD_BATCH");
+    const many = fakeRuntime({
+      "reviews courier/inbox": (body) => (body.op === "wants" ? wantsShop : { success: true, data: { courier: 1, saved: body.items.length, moved: true } }),
+      "shop courier/outbox": (body) => ({ success: true, data: { courier: 1, items: [item(`i${body.after}`)], next: String(Number(body.after ?? 0) + 1), more: true } }),
+    });
+    expect(await runCourier(many, { limits: { handoffsPerRun: 500 } })).toMatchObject({ handoffs: 20, unfinished: true });
+    expect(await runCourier(many, { limits: { handoffsPerRun: 3 } })).toMatchObject({ handoffs: 3, unfinished: true });
   });
 
   test("a receiver asking for a sender that is not installed is reported", async () => {
@@ -175,6 +197,14 @@ describe("door helpers in a sandboxed plugin", () => {
     expect(await ask({})).toBe("50");
     expect(await ask({ limit: 500 })).toBe("100");
     expect(await ask({ limit: 0 })).toBe("1");
+  });
+
+  test("a reader's answer is never cut short: too many items, or no list, is refused and moves nothing", async () => {
+    for (const answer of [{ items: Array.from({ length: 51 }, (_, n) => item(`i${n}`)), next: "51" }, { items: "none", next: "9" }]) {
+      const door = outboxDoor({ "order.shipped": async () => answer });
+      await expect(door.handler({ input: { courier: 1, op: "since", topic: "order.shipped", after: "0", limit: 50 } }, { kv: kv() }))
+        .rejects.toMatchObject({ code: "BAD_BATCH", status: 500, message: expect.stringMatching(/^BAD_BATCH: /) });
+    }
   });
 
   test("an unknown topic is refused", async () => {

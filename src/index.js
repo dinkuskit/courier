@@ -31,7 +31,7 @@ export const DEFAULT_LIMITS = Object.freeze({
   itemsPerHandoff: 50,
   /** The most items a receiver may ask for in one handoff. */
   maxItemsPerHandoff: 100,
-  /** Batches asked of senders in one run, across every receiver. */
+  /** Handoffs (batches with news given to a receiver) in one run, across every receiver. An empty answer is no handoff. */
   handoffsPerRun: 20,
   /** Topics one receiver may ask for. */
   wantsPerReceiver: 20,
@@ -88,6 +88,10 @@ export function installedPluginIds(runtime) {
  * The plugins offering each door. A door must be private: a public courier door
  * would let anyone on the internet post news, so the courier skips it and
  * reports it.
+ *
+ * A door is a route the plugin declares as `POST`. EmDash answers a route
+ * lookup for a Registry plugin with `{ public: false }` even for a route the
+ * plugin never declared, so an answer that names no methods is no door.
  */
 export function findDoors(runtime, ids = installedPluginIds(runtime)) {
   const outboxes = [];
@@ -101,7 +105,7 @@ export function findDoors(runtime, ids = installedPluginIds(runtime)) {
       } catch {
         meta = null;
       }
-      if (!meta) continue;
+      if (!meta || !Array.isArray(meta.methods) || !meta.methods.includes("POST")) continue;
       if (meta.public === true) {
         problems.push({ plugin: id, code: "PUBLIC_DOOR", route });
         continue;
@@ -184,7 +188,11 @@ function readBatch(data, limits, limit) {
  * Never throws for a plugin's answer; every problem is in the report.
  */
 export async function runCourier(runtime, options = {}) {
-  const limits = { ...DEFAULT_LIMITS, ...(options.limits ?? {}) };
+  // The locked limits are ceilings: a store may only lower them.
+  const limits = Object.fromEntries(Object.entries(DEFAULT_LIMITS).map(([name, ceiling]) => {
+    const asked = options.limits?.[name];
+    return [name, Number.isInteger(asked) && asked > 0 ? Math.min(asked, ceiling) : ceiling];
+  }));
   const { outboxes, inboxes, problems } = findDoors(runtime);
   const report = { receivers: 0, handoffs: 0, delivered: 0, unfinished: false, problems };
   const senders = new Set(outboxes);
@@ -211,11 +219,11 @@ export async function runCourier(runtime, options = {}) {
       }
       let after = want.after;
       for (;;) {
+        // Only handoffs spend the budget, so receivers with nothing new never hold up the ones after them.
         if (budget <= 0) {
           report.unfinished = true;
           return report;
         }
-        budget -= 1;
         const sent = await knock(runtime, want.from, OUTBOX_ROUTE, {
           courier: COURIER_VERSION,
           op: "since",
@@ -233,6 +241,7 @@ export async function runCourier(runtime, options = {}) {
           break;
         }
         if (batch.items.length === 0 && batch.next === after) break;
+        budget -= 1;
         const given = await knock(runtime, receiver, INBOX_ROUTE, {
           courier: COURIER_VERSION,
           op: "deliver",

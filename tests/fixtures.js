@@ -83,7 +83,7 @@ export const bystander = definePlugin({
 export const careless = definePlugin({
   id: "test-careless",
   version: "1.0.0",
-  routes: { "courier/inbox": { public: true, handler: async () => ({ courier: 1, wants: [] }) } },
+  routes: { "courier/inbox": { public: true, methods: ["POST"], handler: async () => ({ courier: 1, wants: [] }) } },
 });
 
 /** A store administrator, as EmDash hands a signed-in person to a private route. */
