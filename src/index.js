@@ -126,7 +126,9 @@ async function knock(runtime, pluginId, route, body) {
     return { ok: false, code: "DOOR_FAILED" };
   }
   if (!result?.success) {
-    const code = typeof result?.error?.code === "string" ? result.error.code : "DOOR_FAILED";
+    let code = typeof result?.error?.code === "string" ? result.error.code : "DOOR_FAILED";
+    // A sandboxed plugin's refusal arrives as ROUTE_ERROR; its message starts with the door's own code.
+    if (code === "ROUTE_ERROR") code = /\b([A-Z][A-Z0-9_]{2,}): /.exec(String(result.error.message ?? ""))?.[1] ?? code;
     return { ok: false, code };
   }
   const data = result.data;

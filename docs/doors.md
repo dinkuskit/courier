@@ -27,6 +27,18 @@ courier calls from the store's own code with no person. So a call with no
 person is the courier, and anything else is refused, even the store's
 administrator.
 
+A door's refusal starts its message with its code, as in
+`COURIER_ONLY: Only the store's courier may use this door.` EmDash's sandbox
+passes only the message of an error thrown inside a Registry plugin, under the
+code `ROUTE_ERROR`, so the courier reads the code from the start of the
+message. A door written without the helpers does the same.
+
+| Code | Status | When |
+| --- | --- | --- |
+| `COURIER_ONLY` | 403 | The call carries a signed-in person. |
+| `BAD_COURIER_REQUEST` | 400 | The call is not a courier request, or names an unknown operation. |
+| `UNKNOWN_TOPIC` | 404 | The outbox does not send that topic. |
+
 A door must never be public. The courier skips a public door and reports
 `PUBLIC_DOOR`.
 

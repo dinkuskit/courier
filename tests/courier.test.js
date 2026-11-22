@@ -67,6 +67,23 @@ describe("what the courier refuses to carry", () => {
     expect(asked).toEqual([50, 100, 100]);
   });
 
+  test("reads the door's code from a sandboxed plugin's refusal, which EmDash passes on only as ROUTE_ERROR", async () => {
+    const runtime = fakeRuntime({
+      "reviews courier/inbox": () => wantsShop,
+      "shop courier/outbox": () => ({ success: false, error: { code: "ROUTE_ERROR", message: "PluginRouteError: UNKNOWN_TOPIC: This plugin does not send that topic." } }),
+    });
+    const report = await runCourier(runtime);
+    expect(report.problems).toEqual([{ plugin: "shop", code: "UNKNOWN_TOPIC", route: "courier/outbox", topic: "order.shipped" }]);
+  });
+
+  test("a sandboxed error with no code in its message stays ROUTE_ERROR", async () => {
+    const runtime = fakeRuntime({
+      "reviews courier/inbox": () => wantsShop,
+      "shop courier/outbox": () => ({ success: false, error: { code: "ROUTE_ERROR", message: "Error: something broke" } }),
+    });
+    expect((await runCourier(runtime)).problems[0].code).toBe("ROUTE_ERROR");
+  });
+
   test("a receiver asking for a sender that is not installed is reported", async () => {
     const runtime = fakeRuntime({ "reviews courier/inbox": () => wantsShop });
     const report = await runCourier(runtime);
@@ -134,7 +151,7 @@ describe("door helpers in a sandboxed plugin", () => {
     const read = vi.fn();
     const door = outboxDoor({ "order.shipped": read });
     await expect(door.handler({ input: { courier: 1, op: "since", topic: "order.shipped" }, user: { id: "u", role: 50 } }, { kv: kv() }))
-      .rejects.toMatchObject({ code: "COURIER_ONLY", status: 403 });
+      .rejects.toMatchObject({ code: "COURIER_ONLY", status: 403, message: expect.stringMatching(/^COURIER_ONLY: /) });
     expect(read).not.toHaveBeenCalled();
   });
 

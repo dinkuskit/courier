@@ -25,6 +25,14 @@ const BOOKMARK_PREFIX = "courier:after:";
 /** A run is due every minute; five quiet minutes means the courier is late. */
 const LATE_AFTER_MS = 5 * 60_000;
 
+/**
+ * A refusal whose message starts with its code. EmDash's sandbox passes only
+ * the message across, as ROUTE_ERROR, so the courier reads the code from there.
+ */
+function refuse(code, words, status) {
+  return new PluginRouteError(code, `${code}: ${words}`, status);
+}
+
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -34,10 +42,10 @@ function parts(first, second) {
 }
 
 function onlyTheCourier(route) {
-  if (route.user) throw new PluginRouteError("COURIER_ONLY", "Only the store's courier may use this door.", 403);
+  if (route.user) throw refuse("COURIER_ONLY", "Only the store's courier may use this door.", 403);
   const input = route.input;
   if (!isRecord(input) || input.courier !== COURIER_VERSION || typeof input.op !== "string") {
-    throw new PluginRouteError("BAD_COURIER_REQUEST", "This is not a courier request.", 400);
+    throw refuse("BAD_COURIER_REQUEST", "This is not a courier request.", 400);
   }
   return input;
 }
@@ -59,10 +67,10 @@ export function outboxDoor(topics) {
     const { route, ctx } = parts(first, second);
     const input = onlyTheCourier(route);
     if (input.op !== "since" || typeof input.topic !== "string") {
-      throw new PluginRouteError("BAD_COURIER_REQUEST", "An outbox only answers \"since\".", 400);
+      throw refuse("BAD_COURIER_REQUEST", "An outbox only answers \"since\".", 400);
     }
     const read = Object.hasOwn(topics, input.topic) ? topics[input.topic] : undefined;
-    if (typeof read !== "function") throw new PluginRouteError("UNKNOWN_TOPIC", "This plugin does not send that topic.", 404);
+    if (typeof read !== "function") throw refuse("UNKNOWN_TOPIC", "This plugin does not send that topic.", 404);
     const after = typeof input.after === "string" ? input.after : null;
     const asked = Number.isInteger(input.limit) ? input.limit : DEFAULT_ITEMS;
     const limit = Math.min(Math.max(asked, 1), MAX_ITEMS);
@@ -103,7 +111,7 @@ export function inboxDoor({ wants, deliver }) {
       const after = typeof input.after === "string" ? input.after : null;
       const next = typeof input.next === "string" ? input.next : null;
       if (typeof from !== "string" || typeof topic !== "string" || !Array.isArray(items) || items.length > MAX_ITEMS) {
-        throw new PluginRouteError("BAD_COURIER_REQUEST", "A delivery needs from, topic and at most 100 items.", 400);
+        throw refuse("BAD_COURIER_REQUEST", "A delivery needs from, topic and at most 100 items.", 400);
       }
       const key = bookmarkKey(from, topic);
       const before = await ctx.kv.getVersioned(key);
@@ -116,7 +124,7 @@ export function inboxDoor({ wants, deliver }) {
       }
       return { courier: COURIER_VERSION, saved, moved };
     }
-    throw new PluginRouteError("BAD_COURIER_REQUEST", "An inbox answers \"wants\" and \"deliver\".", 400);
+    throw refuse("BAD_COURIER_REQUEST", "An inbox answers \"wants\" and \"deliver\".", 400);
   });
 }
 
