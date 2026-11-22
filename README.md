@@ -16,8 +16,8 @@ The contract a plugin implements is in [docs/doors.md](docs/doors.md).
 
 ## Add it to a store
 
-The DinkusKit store template already includes it. Any other EmDash site on
-EmDash 1.4.0 or later:
+The DinkusKit store template will run it from the timer it already has. Any other EmDash site on
+Cloudflare, on EmDash 1.4.0 or later:
 
 ```sh
 npm install github:dinkuskit/courier#<tag>
@@ -38,18 +38,8 @@ export default {
 If the Worker already has a `scheduled()` handler, call
 `courierScheduled()(controller, env, ctx)` from it.
 
-**Node.** Start a run from the site's middleware. A visit starts at most one
-run a minute, after the page is answered, and nobody needs to be signed in:
-
-```ts
-import { sequence } from "astro:middleware";
-import { courierOnVisit } from "@dinkuskit/courier/store";
-
-export const onRequest = sequence(courierOnVisit(), yourMiddleware);
-```
-
-It does nothing on Cloudflare, so the same middleware works for a site that
-builds for both.
+**Node.** Not yet: self-hosted stores are not supported, and the way a Node
+store runs the courier will be decided when they are.
 
 ## Add doors to a plugin
 

@@ -95,27 +95,42 @@
     {
       "baseline_ref": null,
       "candidate_refs": [],
-      "choice": "Package @dinkuskit/courier, installed from a GitHub tag. On Cloudflare the store's once-a-minute timer runs it from the Worker's scheduled() handler; on Node the site's middleware starts a run on any visit at most once a minute, after the page. Both reach EmDash through withEmDashRuntime, so nobody needs to be signed in. A receiving plugin's admin page shows when the courier last came, or that it is missing.",
+      "choice": "Package @dinkuskit/courier, installed from a GitHub tag. Only Cloudflare stores run it: the store's existing once-a-minute timer calls courierScheduled() from the Worker's scheduled() handler, reaching EmDash through withEmDashRuntime, so nobody needs to be signed in. The Node visit hook is removed; how a self-hosted Node store runs the courier is decided when self-hosting is supported. A receiving plugin's admin page shows when the courier last came, or that it is missing.",
       "context_ref": "file:README.md",
       "created_at": "2026-11-22T15:57:55+00:00",
       "deferred_reason": null,
       "delivery_ref": null,
       "dependencies": [],
       "domain": "courier-doors",
-      "history": [],
+      "history": [
+        {
+          "at": "2026-11-22T19:41:49+00:00",
+          "choice": "Package @dinkuskit/courier, installed from a GitHub tag. On Cloudflare the store's once-a-minute timer runs it from the Worker's scheduled() handler; on Node the site's middleware starts a run on any visit at most once a minute, after the page. Both reach EmDash through withEmDashRuntime, so nobody needs to be signed in. A receiving plugin's admin page shows when the courier last came, or that it is missing.",
+          "from": "proposed",
+          "implementation_ref": null,
+          "note": "user accepted the scoped decision",
+          "repair_required": false,
+          "review_classifications": [],
+          "review_ref": null,
+          "review_result": null,
+          "review_source_identity": null,
+          "to": "locked",
+          "verification_ref": null
+        }
+      ],
       "id": "courier-install-20261122",
       "implementation_ref": null,
       "question": "How does a store run the courier?",
-      "rationale": "The template includes it; another EmDash site adds two lines. No per-plugin change to the store.",
+      "rationale": "The owner approved on 22 Nov 2026: every store today runs on Cloudflare, where the template's timer already fires each minute, so the courier is one more line on it at no extra cost; self-hosting is parked, so the Node path waits for it.",
       "repair_required": false,
       "review_classifications": [],
       "review_history": [],
       "review_ref": null,
       "review_result": null,
       "review_source_identity": null,
-      "status": "proposed",
+      "status": "locked",
       "superseded_by": null,
-      "updated_at": "2026-11-22T15:57:55+00:00",
+      "updated_at": "2026-11-22T19:41:49+00:00",
       "verification_ref": null
     }
   ],
@@ -130,5 +145,5 @@
   "status": "active",
   "title": "DinkusKit courier v1",
   "track_id": "courier-v1",
-  "updated_at": "2026-11-22T16:42:16+00:00"
+  "updated_at": "2026-11-22T19:41:49+00:00"
 }

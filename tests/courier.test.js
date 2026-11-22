@@ -1,14 +1,14 @@
 /**
  * The courier's own rules, against a stand-in runtime: bad answers are never
  * delivered, missing senders are reported, the door helpers work for
- * sandboxed plugins' two-argument handlers, and the store hookups run at most
- * once a minute.
+ * sandboxed plugins' two-argument handlers, and the Cloudflare timer hands
+ * each run to the Worker.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { installedPluginIds, runCourier } from "../src/index.js";
 import { inboxDoor, outboxDoor } from "../src/doors.js";
-import { courierOnVisit, courierScheduled, courierTick } from "../src/store.js";
+import { courierScheduled, courierTick } from "../src/store.js";
 
 /** A runtime with the given route handlers, keyed "plugin route". */
 function fakeRuntime(routes, { sandboxed = [] } = {}) {
@@ -262,27 +262,5 @@ describe("running in a store", () => {
     const run = courierScheduled({ withEmDashRuntime: async (fn) => fn(fakeRuntime({})) })({}, {}, { waitUntil });
     expect(waitUntil).toHaveBeenCalledWith(run);
     await run;
-  });
-
-  test("on Node, visits start a run at most once a minute, after the page", async () => {
-    const after = vi.fn();
-    const next = vi.fn(async () => "page");
-    const visit = courierOnVisit({ everyMs: 60_000, after, withEmDashRuntime: async (fn) => fn(fakeRuntime({})) });
-    vi.spyOn(Date, "now").mockReturnValue(1_000_000_000_000);
-    expect(await visit({}, next)).toBe("page");
-    expect(await visit({}, next)).toBe("page");
-    expect(after).toHaveBeenCalledTimes(1);
-    Date.now.mockReturnValue(1_000_000_000_000 + 60_000);
-    await visit({}, next);
-    expect(after).toHaveBeenCalledTimes(2);
-    Date.now.mockRestore();
-  });
-
-  test("on Cloudflare, visits leave the courier to the timer", async () => {
-    vi.stubGlobal("navigator", { userAgent: "Cloudflare-Workers" });
-    const after = vi.fn();
-    const visit = courierOnVisit({ everyMs: 1, after });
-    await visit({}, async () => "page");
-    expect(after).not.toHaveBeenCalled();
   });
 });

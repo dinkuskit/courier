@@ -1,6 +1,6 @@
 // Compile-time checks that the declared types fit how a plugin and a store use them.
 import { inboxDoor, outboxDoor, courierStatus } from "@dinkuskit/courier/doors";
-import { courierOnVisit, courierScheduled } from "@dinkuskit/courier/store";
+import { courierScheduled } from "@dinkuskit/courier/store";
 import { runCourier, type CourierReport } from "@dinkuskit/courier";
 
 const outbox = outboxDoor({
@@ -12,7 +12,6 @@ const inbox = inboxDoor({
 });
 export const routes = { "courier/outbox": outbox, "courier/inbox": inbox };
 export const scheduled = courierScheduled();
-export const visit = courierOnVisit();
 export async function status(kv: Parameters<typeof courierStatus>[0]["kv"]): Promise<string> {
   return (await courierStatus({ kv })).state;
 }
