@@ -50,6 +50,23 @@ describe("what the courier refuses to carry", () => {
     expect(runtime.calls.every((call) => call.user === undefined)).toBe(true);
   });
 
+  test("asks the sender for the receiver's number, 50 when it names none, never more than 100", async () => {
+    const asked = [];
+    for (const limit of [undefined, 100, 500]) {
+      const runtime = fakeRuntime({
+        "reviews courier/inbox": () => ({ success: true, data: { courier: 1, wants: [{ from: "shop", topic: "order.shipped", after: null, limit }] } }),
+        "shop courier/outbox": (body) => {
+          asked.push(body.limit);
+          return { success: true, data: { courier: 1, items: Array.from({ length: body.limit }, (_, n) => item(`x${n}`)), next: "1", more: false } };
+        },
+      });
+      const report = await runCourier(runtime);
+      expect(report.problems).toEqual([]);
+      expect(report.delivered).toBe(asked.at(-1));
+    }
+    expect(asked).toEqual([50, 100, 100]);
+  });
+
   test("a receiver asking for a sender that is not installed is reported", async () => {
     const runtime = fakeRuntime({ "reviews courier/inbox": () => wantsShop });
     const report = await runCourier(runtime);
@@ -61,7 +78,7 @@ describe("what the courier refuses to carry", () => {
     ["two items with one id", { items: [item("x"), item("x")], next: "1", more: false }],
     ["an item without an id", { items: [{ at: "2026-11-22T12:00:00.000Z", data: {} }], next: "1", more: false }],
     ["an item with a bad time", { items: [{ id: "x", at: "soon", data: {} }], next: "1", more: false }],
-    ["more than 50 items", { items: Array.from({ length: 51 }, (_, n) => item(`x${n}`)), next: "1", more: false }],
+    ["more items than were asked for", { items: Array.from({ length: 51 }, (_, n) => item(`x${n}`)), next: "1", more: false }],
   ]) {
     test(`a batch with ${name} is not delivered`, async () => {
       let delivered = false;
@@ -123,8 +140,16 @@ describe("door helpers in a sandboxed plugin", () => {
 
   test("answers the courier with the plugin's batch", async () => {
     const door = outboxDoor({ "order.shipped": async ({ after, limit }) => ({ items: [item("x")], next: `${after}+${limit}`, more: false }) });
-    const answer = await door.handler({ input: { courier: 1, op: "since", topic: "order.shipped", after: "5", limit: 500 } }, { kv: kv() });
-    expect(answer).toEqual({ courier: 1, items: [item("x")], next: "5+50", more: false });
+    const answer = await door.handler({ input: { courier: 1, op: "since", topic: "order.shipped", after: "5", limit: 80 } }, { kv: kv() });
+    expect(answer).toEqual({ courier: 1, items: [item("x")], next: "5+80", more: false });
+  });
+
+  test("a sender reads 50 unless asked for more, and never more than 100", async () => {
+    const door = outboxDoor({ "order.shipped": async ({ limit }) => ({ items: [], next: String(limit), more: false }) });
+    const ask = async (extra) => (await door.handler({ input: { courier: 1, op: "since", topic: "order.shipped", ...extra } }, { kv: kv() })).next;
+    expect(await ask({})).toBe("50");
+    expect(await ask({ limit: 500 })).toBe("100");
+    expect(await ask({ limit: 0 })).toBe("1");
   });
 
   test("an unknown topic is refused", async () => {
@@ -138,7 +163,7 @@ describe("door helpers in a sandboxed plugin", () => {
     const deliver = vi.fn(async ({ items }) => items.length);
     const door = inboxDoor({ wants: [{ from: "shop", topic: "order.shipped" }], deliver });
     const call = (input) => door.handler({ input: { courier: 1, ...input } }, { kv: store });
-    expect(await call({ op: "wants" })).toEqual({ courier: 1, wants: [{ from: "shop", topic: "order.shipped", after: null }] });
+    expect(await call({ op: "wants" })).toEqual({ courier: 1, wants: [{ from: "shop", topic: "order.shipped", after: null, limit: 50 }] });
     expect(await call({ op: "deliver", from: "shop", topic: "order.shipped", items: [item("a")], after: null, next: "1" }))
       .toEqual({ courier: 1, saved: 1, moved: true });
     // An older run, asked from the empty bookmark, arrives late: its items are offered again, the bookmark stays.

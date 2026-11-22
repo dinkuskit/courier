@@ -27,8 +27,10 @@ export const INBOX_ROUTE = "courier/inbox";
 
 /** The default limits of one run. */
 export const DEFAULT_LIMITS = Object.freeze({
-  /** Items in one handoff from a sender to a receiver. */
+  /** Items in one handoff when the receiver asks for no other number. */
   itemsPerHandoff: 50,
+  /** The most items a receiver may ask for in one handoff. */
+  maxItemsPerHandoff: 100,
   /** Batches asked of senders in one run, across every receiver. */
   handoffsPerRun: 20,
   /** Topics one receiver may ask for. */
@@ -141,10 +143,12 @@ function readWants(data, limits) {
     if (!isRecord(want) || !isName(want.from, limits) || !isName(want.topic, limits)) continue;
     const after = want.after === undefined ? null : want.after;
     if (!isBookmark(after, limits)) continue;
+    const asked = Number.isInteger(want.limit) ? want.limit : limits.itemsPerHandoff;
+    const limit = Math.min(Math.max(asked, 1), limits.maxItemsPerHandoff);
     const key = `${want.from}\u0000${want.topic}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    wants.push({ from: want.from, topic: want.topic, after });
+    wants.push({ from: want.from, topic: want.topic, after, limit });
   }
   return wants;
 }
@@ -153,8 +157,8 @@ function readWants(data, limits) {
  * A sender's batch, or null when any part of it is out of shape. A bad batch is
  * never delivered, so the receiver's bookmark stays where it was.
  */
-function readBatch(data, limits) {
-  if (!Array.isArray(data.items) || data.items.length > limits.itemsPerHandoff) return null;
+function readBatch(data, limits, limit) {
+  if (!Array.isArray(data.items) || data.items.length > limit) return null;
   if (!isBookmark(data.next ?? null, limits) || typeof (data.more ?? false) !== "boolean") return null;
   const items = [];
   const ids = new Set();
@@ -215,13 +219,13 @@ export async function runCourier(runtime, options = {}) {
           op: "since",
           topic: want.topic,
           after,
-          limit: limits.itemsPerHandoff,
+          limit: want.limit,
         });
         if (!sent.ok) {
           problems.push({ plugin: want.from, code: sent.code, route: OUTBOX_ROUTE, topic: want.topic });
           break;
         }
-        const batch = readBatch(sent.data, limits);
+        const batch = readBatch(sent.data, limits, want.limit);
         if (!batch) {
           problems.push({ plugin: want.from, code: "BAD_BATCH", route: OUTBOX_ROUTE, topic: want.topic });
           break;

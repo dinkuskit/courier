@@ -1,7 +1,7 @@
 # The courier's doors
 
-Status: proposed on 22 Nov 2026 (decisions `courier-doors-20261122` and
-`courier-limits-20261122`, waiting for the owner's approval). The rule this
+Status: the owner approved on 22 Nov 2026 (decisions `courier-doors-20261122`
+and `courier-limits-20261122`). The rule this
 follows was locked on 22 Nov 2026 as `plugin-communication-rule-20261122` in
 [dinkuskit/dinkuskit](https://github.com/dinkuskit/dinkuskit/blob/main/docs/plugin-communication.md).
 
@@ -63,11 +63,15 @@ answers
 { "courier": 1, "op": "wants" }
 ```
 
-answers what it listens to and from which bookmark:
+answers what it listens to, from which bookmark, and how many items it takes
+at a time:
 
 ```json
-{ "courier": 1, "wants": [{ "from": "dinkus-commerce", "topic": "order.shipped", "after": "41" }] }
+{ "courier": 1, "wants": [{ "from": "dinkus-commerce", "topic": "order.shipped", "after": "41", "limit": 50 }] }
 ```
+
+`limit` is 1 to 100, and 50 when it is left out. The courier asks the sender
+for that many and refuses a batch with more.
 
 Then, for each batch:
 
@@ -98,7 +102,7 @@ answers `{ "courier": 1, "saved": 1, "moved": true }`.
 3. Stop at the run's limits; the next run carries the rest.
 
 A batch that is out of shape (an item over 8 KB, a repeated or missing id, a
-bad time, more than 50 items) is not delivered, so the receiver's bookmark
+bad time, more items than were asked for) is not delivered, so the receiver's bookmark
 stays where it was. A sender that is not installed is reported as
 `SENDER_MISSING`.
 
@@ -106,14 +110,15 @@ stays where it was. A sender that is not installed is reported as
 
 | Limit | Value |
 | --- | --- |
-| Items in one handoff | 50 |
+| Items in one handoff | 50, or up to 100 when the receiver asks |
 | Handoffs in one run, across every receiver | 20 |
 | Bytes in one item | 8 KB |
 | Topics one receiver may want | 20 |
 | Characters in an id | 200 |
 
-Shopify's REST API pages 50 records by default. WordPress runs timed jobs at
-most once every 60 seconds.
+Shopify's REST API pages 50 records by default. EmDash's plugin storage reads
+give 50 records by default and 100 at most, so a handoff of up to 100 is one
+storage read. WordPress runs timed jobs at most once every 60 seconds.
 
 ## Helpers
 

@@ -17,7 +17,9 @@ export const COURIER_VERSION = 1;
 export const OUTBOX_ROUTE = "courier/outbox";
 export const INBOX_ROUTE = "courier/inbox";
 
-const MAX_ITEMS = 50;
+/** Items in one handoff: 50 unless the receiver asks for another number, and never more than 100. */
+const DEFAULT_ITEMS = 50;
+const MAX_ITEMS = 100;
 const LAST_VISIT_KEY = "courier:last-visit";
 const BOOKMARK_PREFIX = "courier:after:";
 /** A run is due every minute; five quiet minutes means the courier is late. */
@@ -62,7 +64,7 @@ export function outboxDoor(topics) {
     const read = Object.hasOwn(topics, input.topic) ? topics[input.topic] : undefined;
     if (typeof read !== "function") throw new PluginRouteError("UNKNOWN_TOPIC", "This plugin does not send that topic.", 404);
     const after = typeof input.after === "string" ? input.after : null;
-    const asked = Number.isInteger(input.limit) ? input.limit : MAX_ITEMS;
+    const asked = Number.isInteger(input.limit) ? input.limit : DEFAULT_ITEMS;
     const limit = Math.min(Math.max(asked, 1), MAX_ITEMS);
     const batch = (await read({ after, limit }, ctx)) ?? {};
     const items = Array.isArray(batch.items) ? batch.items.slice(0, limit) : [];
@@ -91,7 +93,8 @@ export function inboxDoor({ wants, deliver }) {
       for (const want of Array.isArray(list) ? list : []) {
         if (!isRecord(want) || typeof want.from !== "string" || typeof want.topic !== "string") continue;
         const after = await ctx.kv.get(bookmarkKey(want.from, want.topic));
-        answer.push({ from: want.from, topic: want.topic, after: typeof after === "string" ? after : null });
+        const limit = Number.isInteger(want.limit) ? Math.min(Math.max(want.limit, 1), MAX_ITEMS) : DEFAULT_ITEMS;
+        answer.push({ from: want.from, topic: want.topic, after: typeof after === "string" ? after : null, limit });
       }
       return { courier: COURIER_VERSION, wants: answer };
     }
@@ -100,7 +103,7 @@ export function inboxDoor({ wants, deliver }) {
       const after = typeof input.after === "string" ? input.after : null;
       const next = typeof input.next === "string" ? input.next : null;
       if (typeof from !== "string" || typeof topic !== "string" || !Array.isArray(items) || items.length > MAX_ITEMS) {
-        throw new PluginRouteError("BAD_COURIER_REQUEST", "A delivery needs from, topic and at most 50 items.", 400);
+        throw new PluginRouteError("BAD_COURIER_REQUEST", "A delivery needs from, topic and at most 100 items.", 400);
       }
       const key = bookmarkKey(from, topic);
       const before = await ctx.kv.getVersioned(key);

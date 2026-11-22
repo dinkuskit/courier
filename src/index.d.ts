@@ -4,6 +4,7 @@ export declare const INBOX_ROUTE: "courier/inbox";
 
 export interface CourierLimits {
   itemsPerHandoff: number;
+  maxItemsPerHandoff: number;
   handoffsPerRun: number;
   wantsPerReceiver: number;
   idLength: number;

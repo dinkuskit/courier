@@ -34,6 +34,8 @@ export type CourierTopicReader<Ctx> = (asked: { after: string | null; limit: num
 export interface CourierWant {
   from: string;
   topic: string;
+  /** Items per handoff, 1 to 100. Default 50. */
+  limit?: number;
 }
 
 export interface CourierDelivery {
