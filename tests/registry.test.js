@@ -132,3 +132,113 @@ describe("the doors in EmDash's Registry sandbox", () => {
     expect(await runCourier(store.runtime)).toMatchObject({ handoffs: 0, delivered: 0, problems: [] });
   });
 });
+
+describe("opaque Registry ids resolved by _plugin_state.registry_slug (issue #3)", () => {
+  const OPAQUE_SENDER = "r_gshdrqaldna3r7sn";
+  const OPAQUE_SENDER_ALT = "r_bbbbbbbbbbbbbbbb";
+  const OPAQUE_RECEIVER = "r_abcdefghijklmnop";
+  let opaqueStore;
+  let hasRegistrySlugColumn = false;
+
+  beforeAll(async () => {
+    const dir = mkdtempSync(join(tmpdir(), "courier-registry-opaque-"));
+    const url = `file:${join(dir, "store.db")}`;
+    const senderCode = await bundle("./registry/sender.js");
+    const receiverCode = await bundle("./registry/receiver.js");
+    const entry = (id, code, door) => ({
+      id, version: "1.0.0", code, capabilities: [], storage: {}, hooks: [],
+      routes: [{ name: door, ...DOOR }, { name: "peek", ...DOOR }],
+    });
+    const runtime = await EmDashRuntime.create({
+      config: { database: { entrypoint: `courier-registry-opaque-${crypto.randomUUID()}`, type: "sqlite", config: { url } } },
+      plugins: [],
+      createDialect: () => createDialect({ url }),
+      createStorage: null,
+      createScheduler: null,
+      sandboxEnabled: true,
+      createSandboxRunner: (options) => new WorkerdSandboxRunner(options),
+      sandboxedPluginEntries: [
+        entry(OPAQUE_SENDER, senderCode, "courier/outbox"),
+        entry(OPAQUE_SENDER_ALT, senderCode, "courier/outbox"),
+        entry(OPAQUE_RECEIVER, receiverCode, "courier/inbox"),
+      ],
+    });
+    try {
+      await runtime.db.selectFrom("_plugin_state").select("registry_slug").limit(1).execute();
+      hasRegistrySlugColumn = true;
+    } catch {
+      hasRegistrySlugColumn = false;
+    }
+    opaqueStore = {
+      runtime,
+      async peek(pluginId) {
+        const answer = await runtime.handlePluginApiRoute(pluginId, "POST", "peek", new Request("https://store.test/", { method: "POST", body: "{}" }));
+        expect(answer.success, JSON.stringify(answer.error)).toBe(true);
+        return answer.data;
+      },
+      async stop() {
+        try { await runtime.getSandboxRunner()?.terminateAll(); } catch {}
+        try { await runtime.db.destroy(); } catch {}
+        rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }, 60_000);
+
+  afterAll(async () => { await opaqueStore?.stop(); });
+
+  test("resolves opaque sender by active Registry slug, fails closed on collision, and supports options.senders override", async () => {
+    // Without _plugin_state slug binding or explicit override, requesting the slug fails closed as SENDER_MISSING.
+    expect(findDoors(opaqueStore.runtime)).toEqual({
+      outboxes: [OPAQUE_SENDER_ALT, OPAQUE_SENDER].sort(),
+      inboxes: [OPAQUE_RECEIVER],
+      problems: [],
+    });
+    const missing = await runCourier(opaqueStore.runtime);
+    expect(missing).toMatchObject({ receivers: 1, handoffs: 0, delivered: 0 });
+    expect(missing.problems).toEqual([{ plugin: OPAQUE_RECEIVER, code: "SENDER_MISSING", from: SENDER, topic: "order.shipped" }]);
+
+    if (hasRegistrySlugColumn) {
+      // EmDash 1.5: mark OPAQUE_SENDER as an active Registry install with its authoritative slug.
+      await opaqueStore.runtime.db.updateTable("_plugin_state").set({
+        source: "registry",
+        status: "active",
+        registry_publisher_did: "did:web:dinkuskit.com",
+        registry_slug: SENDER,
+      }).where("plugin_id", "=", OPAQUE_SENDER).execute();
+
+      const delivered = await runCourier(opaqueStore.runtime);
+      expect(delivered).toMatchObject({ receivers: 1, handoffs: 2, delivered: 3, unfinished: false, problems: [] });
+      expect(await opaqueStore.peek(OPAQUE_RECEIVER)).toEqual({
+        got: ["got:order-1:shipment-1", "got:order-2:shipment-1", "got:order-3:shipment-1"],
+        bookmark: "3",
+      });
+      expect((await opaqueStore.peek(OPAQUE_SENDER)).reads).toBe(2);
+      expect((await opaqueStore.peek(OPAQUE_SENDER_ALT)).reads).toBe(0);
+
+      // Repeat tick delivers nothing twice.
+      expect(await runCourier(opaqueStore.runtime)).toMatchObject({ receivers: 1, handoffs: 0, delivered: 0, problems: [] });
+
+      // Adding a second active Registry outbox with the same slug fails closed as SENDER_AMBIGUOUS.
+      await opaqueStore.runtime.db.updateTable("_plugin_state").set({
+        source: "registry",
+        status: "active",
+        registry_publisher_did: "did:web:other.example",
+        registry_slug: SENDER,
+      }).where("plugin_id", "=", OPAQUE_SENDER_ALT).execute();
+      const ambiguous = await runCourier(opaqueStore.runtime);
+      expect(ambiguous.problems).toEqual([{ plugin: OPAQUE_RECEIVER, code: "SENDER_AMBIGUOUS", from: SENDER, topic: "order.shipped" }]);
+
+      // Explicit options.senders disambiguates back to the pinned outbox.
+      const pinned = await runCourier(opaqueStore.runtime, { senders: { [SENDER]: OPAQUE_SENDER } });
+      expect(pinned).toMatchObject({ receivers: 1, handoffs: 0, delivered: 0, problems: [] });
+    } else {
+      // EmDash 1.4 has no _plugin_state.registry_slug column; explicit options.senders still resolves opaque ids.
+      const pinned = await runCourier(opaqueStore.runtime, { senders: { [SENDER]: OPAQUE_SENDER } });
+      expect(pinned).toMatchObject({ receivers: 1, handoffs: 2, delivered: 3, unfinished: false, problems: [] });
+      expect(await opaqueStore.peek(OPAQUE_RECEIVER)).toEqual({
+        got: ["got:order-1:shipment-1", "got:order-2:shipment-1", "got:order-3:shipment-1"],
+        bookmark: "3",
+      });
+    }
+  });
+});

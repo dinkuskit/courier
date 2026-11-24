@@ -132,6 +132,47 @@
       "superseded_by": null,
       "updated_at": "2026-11-22T19:41:49+00:00",
       "verification_ref": null
+    },
+    {
+      "baseline_ref": null,
+      "candidate_refs": [],
+      "choice": "Courier reads EmDash's authoritative _plugin_state.registry_slug for active source='registry' installs (never self-reported by plugins) and resolves a unique matching outbox; if more than one installed outbox matches a requested name, courier fails closed with SENDER_AMBIGUOUS; stores may also pass an explicit options.senders map to courierScheduled/runCourier to pin a specific outbox id (failing closed as SENDER_MISSING if absent); deliver keeps the receiver's requested from name so bookmark keys stay stable.",
+      "context_ref": "file:docs/doors.md",
+      "created_at": "2026-11-24T04:22:32+00:00",
+      "deferred_reason": null,
+      "delivery_ref": null,
+      "dependencies": [],
+      "domain": "courier-doors",
+      "history": [
+        {
+          "at": "2026-11-24T04:22:32+00:00",
+          "choice": "Courier reads EmDash's authoritative _plugin_state.registry_slug for active source='registry' installs (never self-reported by plugins) and resolves a unique matching outbox; if more than one installed outbox matches a requested name, courier fails closed with SENDER_AMBIGUOUS; stores may also pass an explicit options.senders map to courierScheduled/runCourier to pin a specific outbox id (failing closed as SENDER_MISSING if absent); deliver keeps the receiver's requested from name so bookmark keys stay stable.",
+          "from": "proposed",
+          "implementation_ref": null,
+          "note": "user accepted the scoped decision",
+          "repair_required": false,
+          "review_classifications": [],
+          "review_ref": null,
+          "review_result": null,
+          "review_source_identity": null,
+          "to": "locked",
+          "verification_ref": null
+        }
+      ],
+      "id": "courier-registry-sender-slug-20261123",
+      "implementation_ref": null,
+      "question": "How does the courier resolve a receiver's logical sender slug (such as dinkus-commerce) when EmDash Registry assigns installed plugins opaque r_... ids?",
+      "rationale": "Owner approved Option A on 2026-11-23.",
+      "repair_required": false,
+      "review_classifications": [],
+      "review_history": [],
+      "review_ref": null,
+      "review_result": null,
+      "review_source_identity": null,
+      "status": "locked",
+      "superseded_by": null,
+      "updated_at": "2026-11-24T04:22:32+00:00",
+      "verification_ref": null
     }
   ],
   "last_activation": {
@@ -145,5 +186,5 @@
   "status": "active",
   "title": "DinkusKit courier v1",
   "track_id": "courier-v1",
-  "updated_at": "2026-11-22T19:41:49+00:00"
+  "updated_at": "2026-11-24T04:22:32+00:00"
 }

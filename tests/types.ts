@@ -12,9 +12,10 @@ const inbox = inboxDoor({
 });
 export const routes = { "courier/outbox": outbox, "courier/inbox": inbox };
 export const scheduled = courierScheduled();
+export const pinnedScheduled = courierScheduled({ senders: { "dinkus-commerce": "r_gshdrqaldna3r7sn" } });
 export async function status(kv: Parameters<typeof courierStatus>[0]["kv"]): Promise<string> {
   return (await courierStatus({ kv })).state;
 }
 export async function run(runtime: Parameters<typeof runCourier>[0]): Promise<CourierReport> {
-  return runCourier(runtime);
+  return runCourier(runtime, { senders: { "dinkus-commerce": "r_gshdrqaldna3r7sn" } });
 }

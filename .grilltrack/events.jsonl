@@ -6,3 +6,5 @@
 {"action": "decision_locked", "at": "2026-11-22T16:42:16+00:00", "data": {"decision_id": "courier-doors-20261122"}, "event_id": "d3f86c1d-82f4-4b33-84eb-9e4795df7bc6"}
 {"action": "decision_locked", "at": "2026-11-22T16:42:16+00:00", "data": {"decision_id": "courier-limits-20261122"}, "event_id": "9aace960-3ede-4e31-ade5-2ac687566e5c"}
 {"action": "decision_locked", "at": "2026-11-22T19:41:49+00:00", "data": {"decision_id": "courier-install-20261122"}, "event_id": "b3d4fca8-bbaa-4b49-8d68-de9aa4e0a36f"}
+{"action": "decision_proposed", "at": "2026-11-24T04:22:32+00:00", "data": {"decision_id": "courier-registry-sender-slug-20261123"}, "event_id": "3ba55f99-1266-4a57-ae2e-3a8bcff078e1"}
+{"action": "decision_locked", "at": "2026-11-24T04:22:32+00:00", "data": {"decision_id": "courier-registry-sender-slug-20261123"}, "event_id": "a8a84a53-7c6c-41f1-b1f8-722053d90221"}
