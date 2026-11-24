@@ -38,6 +38,16 @@ export default {
 If the Worker already has a `scheduled()` handler, call
 `courierScheduled()(controller, env, ctx)` from it.
 
+For EmDash Registry installs (whose runtime ids are opaque `r_...` hashes), the
+courier resolves a receiver's requested sender slug (such as `dinkus-commerce`)
+from EmDash's active `_plugin_state.registry_slug` rows and fails closed with
+`SENDER_AMBIGUOUS` if more than one installed outbox matches. A store running
+two installs side by side can pin one explicitly:
+
+```ts
+scheduled: courierScheduled({ senders: { "dinkus-commerce": "r_gshdrqaldna3r7sn" } }),
+```
+
 **Node.** Not yet: self-hosted stores are not supported, and the way a Node
 store runs the courier will be decided when they are.
 

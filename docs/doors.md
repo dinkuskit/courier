@@ -126,6 +126,25 @@ bad time, more items than were asked for) is not delivered, so the receiver's bo
 stays where it was. A sender that is not installed is reported as
 `SENDER_MISSING`.
 
+### Registry sender resolution
+
+EmDash's Registry installer assigns each installed plugin an opaque id (such as
+`r_gshdrqaldna3r7sn`) while recording its authoritative `registry_slug` (such as
+`dinkus-commerce`) in EmDash's own `_plugin_state` table. A receiver may keep
+asking for `from: "dinkus-commerce"`:
+
+1. If the store passes `options.senders` (for example,
+   `courierScheduled({ senders: { "dinkus-commerce": "r_gshdrqaldna3r7sn" } })`),
+   the courier calls that exact outbox id and reports `SENDER_MISSING` if it has
+   no installed outbox.
+2. Otherwise the courier matches an installed outbox whose plugin id or active
+   Registry `registry_slug` equals `want.from`.
+3. If more than one installed outbox matches (for example, two publishers or a
+   configured and Registry install sharing the same slug), the courier refuses
+   to guess and reports `SENDER_AMBIGUOUS`.
+4. The `deliver` call still carries the receiver's requested `from` name so its
+   bookmark key stays stable across installs.
+
 ## Limits of one run
 
 | Limit | Value |

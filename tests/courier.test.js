@@ -11,9 +11,9 @@ import { inboxDoor, outboxDoor } from "../src/doors.js";
 import { courierScheduled, courierTick } from "../src/store.js";
 
 /** A runtime with the given route handlers, keyed "plugin route". */
-function fakeRuntime(routes, { sandboxed = [] } = {}) {
+function fakeRuntime(routes, { sandboxed = [], registryStates = null } = {}) {
   const calls = [];
-  return {
+  const runtime = {
     calls,
     configuredPlugins: [...new Set(Object.keys(routes).map((key) => key.split(" ")[0]))]
       .filter((id) => !sandboxed.includes(id)).map((id) => ({ id })),
@@ -27,6 +27,24 @@ function fakeRuntime(routes, { sandboxed = [] } = {}) {
       return routes[`${id} ${route}`](body);
     },
   };
+  if (registryStates !== null) {
+    runtime.db = {
+      selectFrom(table) {
+        if (table !== "_plugin_state") throw new Error(`unexpected table ${table}`);
+        const filters = [];
+        const query = {
+          select() { return query; },
+          where(col, op, val) { filters.push([col, op, val]); return query; },
+          async execute() {
+            if (typeof registryStates === "function") return registryStates();
+            return registryStates.filter((row) => filters.every(([col, , val]) => row[col] === val));
+          },
+        };
+        return query;
+      },
+    };
+  }
+  return runtime;
 }
 
 const wantsShop = { success: true, data: { courier: 1, wants: [{ from: "shop", topic: "order.shipped", after: null }] } };
@@ -118,6 +136,88 @@ describe("what the courier refuses to carry", () => {
     const runtime = fakeRuntime({ "reviews courier/inbox": () => wantsShop });
     const report = await runCourier(runtime);
     expect(report.problems).toEqual([{ plugin: "reviews", code: "SENDER_MISSING", from: "shop", topic: "order.shipped" }]);
+  });
+
+  test("resolves an opaque Registry outbox by its active _plugin_state.registry_slug and preserves want.from on deliver", async () => {
+    const opaqueShop = "r_gshdrqaldna3r7sn";
+    const opaqueReviews = "r_abcdefghijklmnop";
+    const runtime = fakeRuntime({
+      [`${opaqueReviews} courier/inbox`]: (body) => (body.op === "wants" ? wantsShop : { success: true, data: { courier: 1, saved: body.items.length, moved: true } }),
+      [`${opaqueShop} courier/outbox`]: () => ({ success: true, data: { courier: 1, items: [item("ord-1")], next: "1", more: false } }),
+    }, {
+      sandboxed: [opaqueShop, opaqueReviews],
+      registryStates: [
+        { plugin_id: opaqueShop, source: "registry", status: "active", registry_slug: "shop" },
+        { plugin_id: "r_inactive00000000", source: "registry", status: "inactive", registry_slug: "shop" },
+        { plugin_id: "r_other00000000000", source: "marketplace", status: "active", registry_slug: "shop" },
+      ],
+    });
+    const report = await runCourier(runtime);
+    expect(report).toMatchObject({ receivers: 1, handoffs: 1, delivered: 1, problems: [] });
+    expect(runtime.calls.find((c) => c.route === "courier/outbox")?.id).toBe(opaqueShop);
+    expect(runtime.calls.find((c) => c.body.op === "deliver")?.body.from).toBe("shop");
+  });
+
+  test("fails closed as SENDER_AMBIGUOUS when two active outboxes match one slug, and options.senders disambiguates", async () => {
+    const first = "r_gshdrqaldna3r7sn";
+    const second = "r_bbbbbbbbbbbbbbbb";
+    const runtime = fakeRuntime({
+      "r_reviews000000000 courier/inbox": (body) => (body.op === "wants" ? wantsShop : { success: true, data: { courier: 1, saved: body.items.length, moved: true } }),
+      [`${first} courier/outbox`]: () => ({ success: true, data: { courier: 1, items: [item("from-first")], next: "1", more: false } }),
+      [`${second} courier/outbox`]: () => ({ success: true, data: { courier: 1, items: [item("from-second")], next: "1", more: false } }),
+    }, {
+      sandboxed: [first, second, "r_reviews000000000"],
+      registryStates: [
+        { plugin_id: first, source: "registry", status: "active", registry_slug: "shop" },
+        { plugin_id: second, source: "registry", status: "active", registry_slug: "shop" },
+      ],
+    });
+    const ambiguous = await runCourier(runtime);
+    expect(ambiguous).toMatchObject({ handoffs: 0, delivered: 0 });
+    expect(ambiguous.problems).toEqual([{ plugin: "r_reviews000000000", code: "SENDER_AMBIGUOUS", from: "shop", topic: "order.shipped" }]);
+
+    const pinned = await runCourier(runtime, { senders: { shop: second } });
+    expect(pinned).toMatchObject({ receivers: 1, handoffs: 1, delivered: 1, problems: [] });
+    expect(runtime.calls.find((c) => c.route === "courier/outbox")?.id).toBe(second);
+    expect(runtime.calls.find((c) => c.body.op === "deliver")?.body.items[0].id).toBe("from-second");
+  });
+
+  test("fails closed as SENDER_AMBIGUOUS when a configured outbox and a Registry outbox share the same name", async () => {
+    const opaqueShop = "r_gshdrqaldna3r7sn";
+    const runtime = fakeRuntime({
+      "reviews courier/inbox": () => wantsShop,
+      "shop courier/outbox": () => ({ success: true, data: { courier: 1, items: [item("a")], next: "1", more: false } }),
+      [`${opaqueShop} courier/outbox`]: () => ({ success: true, data: { courier: 1, items: [item("b")], next: "1", more: false } }),
+    }, {
+      sandboxed: [opaqueShop],
+      registryStates: [{ plugin_id: opaqueShop, source: "registry", status: "active", registry_slug: "shop" }],
+    });
+    const report = await runCourier(runtime);
+    expect(report.problems).toEqual([{ plugin: "reviews", code: "SENDER_AMBIGUOUS", from: "shop", topic: "order.shipped" }]);
+  });
+
+  test("options.senders fails closed when the pinned id has no installed outbox, and ignores inherited prototype keys", async () => {
+    const runtime = fakeRuntime({
+      "reviews courier/inbox": () => ({ success: true, data: { courier: 1, wants: [{ from: "shop", topic: "order.shipped", after: null }, { from: "toString", topic: "t", after: null }] } }),
+      "shop courier/outbox": () => ({ success: true, data: { courier: 1, items: [item("a")], next: "1", more: false } }),
+    });
+    const report = await runCourier(runtime, { senders: { shop: "r_missing000000000" } });
+    expect(report.handoffs).toBe(0);
+    expect(report.problems).toEqual([
+      { plugin: "reviews", code: "SENDER_MISSING", from: "shop", topic: "order.shipped" },
+      { plugin: "reviews", code: "SENDER_MISSING", from: "toString", topic: "t" },
+    ]);
+  });
+
+  test("falls back to direct plugin ids when _plugin_state.registry_slug is unavailable", async () => {
+    const runtime = fakeRuntime({
+      "reviews courier/inbox": (body) => (body.op === "wants" ? wantsShop : { success: true, data: { courier: 1, saved: body.items.length, moved: true } }),
+      "shop courier/outbox": () => ({ success: true, data: { courier: 1, items: [item("x")], next: "1", more: false } }),
+    }, {
+      registryStates: () => { throw new Error("no such column: registry_slug"); },
+    });
+    const report = await runCourier(runtime);
+    expect(report).toMatchObject({ receivers: 1, handoffs: 1, delivered: 1, problems: [] });
   });
 
   for (const [name, batch] of [

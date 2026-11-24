@@ -183,6 +183,61 @@ function readBatch(data, limits, limit) {
 }
 
 /**
+ * Reads active EmDash Registry slug bindings (`plugin_id -> registry_slug`) from
+ * EmDash's own `_plugin_state` table. Never reads any plugin's private storage.
+ * Databases or minimal test runtimes without `_plugin_state.registry_slug` fall
+ * back to direct plugin ids.
+ */
+async function readRegistrySlugs(runtime) {
+  const slugs = new Map();
+  if (typeof runtime.db?.selectFrom !== "function") return slugs;
+  try {
+    const rows = await runtime.db
+      .selectFrom("_plugin_state")
+      .select(["plugin_id", "registry_slug"])
+      .where("source", "=", "registry")
+      .where("status", "=", "active")
+      .execute();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const id = typeof row?.plugin_id === "string" ? row.plugin_id : "";
+      const slug = typeof row?.registry_slug === "string" ? row.registry_slug.trim() : "";
+      if (id && slug) slugs.set(id, slug);
+    }
+  } catch {
+    // Databases or runtimes without `_plugin_state.registry_slug` use direct plugin ids.
+  }
+  return slugs;
+}
+
+/**
+ * Resolves a receiver's requested sender name (`want.from`) to one installed
+ * outbox plugin id.
+ *
+ * 1. Explicit `options.senders[name]` pins one outbox id (fails closed as
+ *    `SENDER_MISSING` if that id has no installed outbox).
+ * 2. Otherwise matches either an exact outbox plugin id or an active EmDash
+ *    Registry outbox whose authoritative `registry_slug` equals `name`.
+ * 3. Fails closed as `SENDER_AMBIGUOUS` when more than one installed outbox
+ *    matches `name`.
+ */
+function resolveSender(name, outboxSet, registrySlugs, explicitSenders) {
+  if (isRecord(explicitSenders) && Object.hasOwn(explicitSenders, name)) {
+    const pinned = explicitSenders[name];
+    return typeof pinned === "string" && pinned.length > 0 && outboxSet.has(pinned)
+      ? { ok: true, id: pinned }
+      : { ok: false, code: "SENDER_MISSING" };
+  }
+  const matches = new Set();
+  if (outboxSet.has(name)) matches.add(name);
+  for (const [pluginId, slug] of registrySlugs) {
+    if (slug === name && outboxSet.has(pluginId)) matches.add(pluginId);
+  }
+  if (matches.size === 0) return { ok: false, code: "SENDER_MISSING" };
+  if (matches.size > 1) return { ok: false, code: "SENDER_AMBIGUOUS" };
+  return { ok: true, id: [...matches][0] };
+}
+
+/**
  * One courier run: for every receiver, ask what it wants, ask each sender for
  * news since the receiver's bookmark, and hand it over with the new bookmark.
  * Never throws for a plugin's answer; every problem is in the report.
@@ -196,6 +251,7 @@ export async function runCourier(runtime, options = {}) {
   const { outboxes, inboxes, problems } = findDoors(runtime);
   const report = { receivers: 0, handoffs: 0, delivered: 0, unfinished: false, problems };
   const senders = new Set(outboxes);
+  const registrySlugs = await readRegistrySlugs(runtime);
   let budget = limits.handoffsPerRun;
 
   for (const receiver of inboxes) {
@@ -213,10 +269,12 @@ export async function runCourier(runtime, options = {}) {
     report.receivers += 1;
 
     for (const want of wants) {
-      if (!senders.has(want.from)) {
-        problems.push({ plugin: receiver, code: "SENDER_MISSING", from: want.from, topic: want.topic });
+      const resolved = resolveSender(want.from, senders, registrySlugs, options.senders);
+      if (!resolved.ok) {
+        problems.push({ plugin: receiver, code: resolved.code, from: want.from, topic: want.topic });
         continue;
       }
+      const senderId = resolved.id;
       let after = want.after;
       for (;;) {
         // Only handoffs spend the budget, so receivers with nothing new never hold up the ones after them.
@@ -224,7 +282,7 @@ export async function runCourier(runtime, options = {}) {
           report.unfinished = true;
           return report;
         }
-        const sent = await knock(runtime, want.from, OUTBOX_ROUTE, {
+        const sent = await knock(runtime, senderId, OUTBOX_ROUTE, {
           courier: COURIER_VERSION,
           op: "since",
           topic: want.topic,
@@ -232,12 +290,12 @@ export async function runCourier(runtime, options = {}) {
           limit: want.limit,
         });
         if (!sent.ok) {
-          problems.push({ plugin: want.from, code: sent.code, route: OUTBOX_ROUTE, topic: want.topic });
+          problems.push({ plugin: senderId, code: sent.code, route: OUTBOX_ROUTE, topic: want.topic });
           break;
         }
         const batch = readBatch(sent.data, limits, want.limit);
         if (!batch) {
-          problems.push({ plugin: want.from, code: "BAD_BATCH", route: OUTBOX_ROUTE, topic: want.topic });
+          problems.push({ plugin: senderId, code: "BAD_BATCH", route: OUTBOX_ROUTE, topic: want.topic });
           break;
         }
         if (batch.items.length === 0 && batch.next === after) break;

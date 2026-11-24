@@ -44,6 +44,8 @@ export interface CourierRuntime {
   configuredPlugins?: ReadonlyArray<{ id: string }>;
   sandboxedPlugins?: { keys(): Iterable<string> };
   sandboxedPluginEntries?: ReadonlyArray<{ id: string }>;
+  /** EmDash's Kysely database, used read-only for `_plugin_state.registry_slug` resolution. */
+  db?: { selectFrom?(table: never): unknown };
   getPluginRouteMeta(pluginId: string, path: string): { public?: boolean } | null;
   handlePluginApiRoute(
     pluginId: string,
@@ -56,6 +58,8 @@ export interface CourierRuntime {
 export interface CourierOptions {
   /** Lower limits for this run; each is capped at its locked value in `DEFAULT_LIMITS`. */
   limits?: Partial<CourierLimits>;
+  /** Optional explicit mapping from a requested sender name (`want.from`) to an installed outbox plugin id. */
+  senders?: Readonly<Record<string, string>>;
 }
 
 export declare function installedPluginIds(runtime: CourierRuntime): string[];
