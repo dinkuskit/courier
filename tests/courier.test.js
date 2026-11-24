@@ -209,7 +209,7 @@ describe("what the courier refuses to carry", () => {
     ]);
   });
 
-  test("falls back to direct plugin ids when _plugin_state.registry_slug is unavailable (EmDash 1.4)", async () => {
+  test("falls back to direct plugin ids when _plugin_state.registry_slug is unavailable", async () => {
     const runtime = fakeRuntime({
       "reviews courier/inbox": (body) => (body.op === "wants" ? wantsShop : { success: true, data: { courier: 1, saved: body.items.length, moved: true } }),
       "shop courier/outbox": () => ({ success: true, data: { courier: 1, items: [item("x")], next: "1", more: false } }),

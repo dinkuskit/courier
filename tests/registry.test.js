@@ -198,13 +198,29 @@ describe("opaque Registry ids resolved by _plugin_state.registry_slug (issue #3)
     expect(missing.problems).toEqual([{ plugin: OPAQUE_RECEIVER, code: "SENDER_MISSING", from: SENDER, topic: "order.shipped" }]);
 
     if (hasRegistrySlugColumn) {
-      // EmDash 1.5: mark OPAQUE_SENDER as an active Registry install with its authoritative slug.
-      await opaqueStore.runtime.db.updateTable("_plugin_state").set({
-        source: "registry",
-        status: "active",
-        registry_publisher_did: "did:web:dinkuskit.com",
-        registry_slug: SENDER,
-      }).where("plugin_id", "=", OPAQUE_SENDER).execute();
+      const upsertRegistrySlug = (pluginId, publisherDid) =>
+        opaqueStore.runtime.db
+          .insertInto("_plugin_state")
+          .values({
+            plugin_id: pluginId,
+            version: "1.0.0",
+            status: "active",
+            source: "registry",
+            registry_publisher_did: publisherDid,
+            registry_slug: SENDER,
+          })
+          .onConflict((oc) =>
+            oc.column("plugin_id").doUpdateSet({
+              source: "registry",
+              status: "active",
+              registry_publisher_did: publisherDid,
+              registry_slug: SENDER,
+            }),
+          )
+          .execute();
+
+      // Seed one active Registry slug row for OPAQUE_SENDER, matching real Registry installs on EmDash 1.4 and 1.5.
+      await upsertRegistrySlug(OPAQUE_SENDER, "did:web:dinkuskit.com");
 
       const delivered = await runCourier(opaqueStore.runtime);
       expect(delivered).toMatchObject({ receivers: 1, handoffs: 2, delivered: 3, unfinished: false, problems: [] });
@@ -219,12 +235,7 @@ describe("opaque Registry ids resolved by _plugin_state.registry_slug (issue #3)
       expect(await runCourier(opaqueStore.runtime)).toMatchObject({ receivers: 1, handoffs: 0, delivered: 0, problems: [] });
 
       // Adding a second active Registry outbox with the same slug fails closed as SENDER_AMBIGUOUS.
-      await opaqueStore.runtime.db.updateTable("_plugin_state").set({
-        source: "registry",
-        status: "active",
-        registry_publisher_did: "did:web:other.example",
-        registry_slug: SENDER,
-      }).where("plugin_id", "=", OPAQUE_SENDER_ALT).execute();
+      await upsertRegistrySlug(OPAQUE_SENDER_ALT, "did:web:other.example");
       const ambiguous = await runCourier(opaqueStore.runtime);
       expect(ambiguous.problems).toEqual([{ plugin: OPAQUE_RECEIVER, code: "SENDER_AMBIGUOUS", from: SENDER, topic: "order.shipped" }]);
 
@@ -232,7 +243,7 @@ describe("opaque Registry ids resolved by _plugin_state.registry_slug (issue #3)
       const pinned = await runCourier(opaqueStore.runtime, { senders: { [SENDER]: OPAQUE_SENDER } });
       expect(pinned).toMatchObject({ receivers: 1, handoffs: 0, delivered: 0, problems: [] });
     } else {
-      // EmDash 1.4 has no _plugin_state.registry_slug column; explicit options.senders still resolves opaque ids.
+      // Databases without `_plugin_state.registry_slug` still resolve opaque ids via explicit options.senders.
       const pinned = await runCourier(opaqueStore.runtime, { senders: { [SENDER]: OPAQUE_SENDER } });
       expect(pinned).toMatchObject({ receivers: 1, handoffs: 2, delivered: 3, unfinished: false, problems: [] });
       expect(await opaqueStore.peek(OPAQUE_RECEIVER)).toEqual({

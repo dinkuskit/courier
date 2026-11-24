@@ -185,7 +185,7 @@ function readBatch(data, limits, limit) {
 /**
  * Reads active EmDash Registry slug bindings (`plugin_id -> registry_slug`) from
  * EmDash's own `_plugin_state` table. Never reads any plugin's private storage.
- * EmDash 1.4 and minimal test runtimes have no `registry_slug` column; they fall
+ * Databases or minimal test runtimes without `_plugin_state.registry_slug` fall
  * back to direct plugin ids.
  */
 async function readRegistrySlugs(runtime) {
@@ -204,7 +204,7 @@ async function readRegistrySlugs(runtime) {
       if (id && slug) slugs.set(id, slug);
     }
   } catch {
-    // Pre-1.5 databases or runtimes without `_plugin_state.registry_slug` use direct plugin ids.
+    // Databases or runtimes without `_plugin_state.registry_slug` use direct plugin ids.
   }
   return slugs;
 }
