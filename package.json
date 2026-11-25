@@ -39,9 +39,9 @@
   },
   "devDependencies": {
     "@astrojs/react": "7.0.1",
-    "@emdash-cms/sandbox-workerd": "0.9.7",
+    "@emdash-cms/sandbox-workerd": "0.9.8",
     "astro": "7.3.8",
-    "emdash": "1.5.0",
+    "emdash": "1.6.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "rolldown": "1.2.19",
