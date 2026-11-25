@@ -44,7 +44,7 @@ contract or the limits is a ledger entry the owner approves first.
 
 Run `npm ci --ignore-scripts`, `npm run typecheck` and `npm test` before
 pushing. The tests build a real EmDash runtime; keep every proof in
-`tests/runtime.test.js` passing on EmDash 1.4.0 and 1.5.0 (CI runs both).
+`tests/runtime.test.js` passing on EmDash 1.5.0 and 1.6.0 (CI runs both).
 
 ## Gates
 

@@ -90,7 +90,7 @@ door. It shows that:
    and even the store's administrator is refused, through EmDash's own
    plugin-route policy code.
 
-CI runs it on EmDash 1.4.0 and 1.5.0.
+CI runs it on EmDash 1.5.0 and 1.6.0.
 
 ## Development
 
